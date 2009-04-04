@@ -7,6 +7,9 @@ from fnmatch import fnmatch
 
 def find_files(start_dir, include_filter, exclude_filter, top_level):
     paths = os.listdir(start_dir)
+    
+    # what about __init__.pyc or pyo - and should probably allow .PY 
+    # (differently cased extension) which would be valid on Windoze
     if not top_level and '__init__.py' not in paths:
         return
     
