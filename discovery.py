@@ -1,105 +1,106 @@
 import os
 import sys
-from unittest import TestCase, TextTestRunner, TestLoader, TestSuite
-from itertools import chain
+from unittest import TextTestRunner, TestLoader
 from fnmatch import fnmatch
 
-
-def find_files(start_dir, include_filter, exclude_filter, top_level):
-    paths = os.listdir(start_dir)
+ 
+def name_from_path(path, top_level_dir):
+    path = os.path.splitext(os.path.normpath(path))[0]
     
-    # what about __init__.pyc or pyo - and should probably allow .PY 
-    # (differently cased extension) which would be valid on Windoze
-    if not top_level and '__init__.py' not in paths:
-        return
-    
-    for path in paths:
-        full_path = os.path.join(start_dir, path)
-        if os.path.isfile(full_path):
-            if fnmatch(path, include_filter): 
-                if exclude_filter is None or not fnmatch(path, exclude_filter):
-                    yield full_path
-        elif os.path.isdir(full_path):
-            for entry in find_files(full_path, include_filter, exclude_filter, False):
-                yield entry
-
-                
-def module_names_from_paths(test_paths, top_level_dir):
-    names = []
-    for path in test_paths:
-        if not path.endswith('.py'):
-            continue
-        path = os.path.normpath(path)[:-3]
-        
-        # we don't handle drive / volume names
-        name = os.path.relpath(path, top_level_dir).replace(os.path.sep, '.')
-        yield name
+    # we don't handle drive / volume names
+    # start_dir / top_level_dir on separate drives is an error anyway
+    name = os.path.relpath(path, top_level_dir).replace(os.path.sep, '.')
+    return name
 
         
-class DiscoveringTestSuite(TestSuite):
+class DiscoveringLoader(TestLoader):
     
-    loaderClass = TestLoader
+    _top_level_dir = None
     
-    def __init__(self, start_dir, include_filter, exclude_filter, is_top_level,
-        top_level_dir):
-        super(DiscoveringTestSuite, self).__init__()
-        self._discovered = False
-        self._start_dir = start_dir
-        self._include_filter = include_filter
-        self._exclude_filter = exclude_filter
-        self._is_top_level = is_top_level
+    def loadTestsFromModule(self, module):
+        tests = TestLoader.loadTestsFromModule(self, module)
+        load_tests = getattr(module, 'load_tests', None)
+        if load_tests is not None:
+            tests = load_tests(self, tests, None)
+        return tests
+    
+    def discover(self, start_dir, include_filter, top_level_dir=None):
+        if top_level_dir is None and self._top_level_dir is not None:
+            # make top_level_dir optional if called from load_tests in a package
+            top_level_dir = self._top_level_dir
+        elif top_level_dir is None:
+            top_level_dir = start_dir
+            
+        top_level_dir = os.path.abspath(os.path.normpath(top_level_dir))
+        start_dir = os.path.abspath(os.path.normpath(start_dir))
+    
+        if not top_level_dir in sys.path:
+            sys.path.append(top_level_dir)
         self._top_level_dir = top_level_dir
-
-    def discover(self):
-        if self._discovered:
-            return
         
-        # Do test discovery. Note that this is typically invoked during
-        # __iter__, so we have to yield the tests we find as well as mutating
-        # self._tests to make them visible in e.g. repr(). We could use a
-        # separate list to make things clearer.
-        loader = self.loaderClass()
-        test_paths = find_files(self._start_dir, self._include_filter,
-            self._exclude_filter, self._is_top_level)
+        is_top_level = start_dir == top_level_dir
         
-        # NB: loadTestsFromNames is not currently a generator. If it was test
-        # running and discovery would progress in parallel.
-        for test in loader.loadTestsFromNames(
-            module_names_from_paths(test_paths, self._top_level_dir)):
-            self.addTest(test)
-            yield test
-
-    def __iter__(self):
-        return chain(super(DiscoveringTestSuite, self).__iter__(),
-            self.discover())
-
-
-
-def run(start_dir='.', include_filter='test*.py', exclude_filter=None, 
-        top_level_dir=None, **kwargs):
+        if not is_top_level and '__init__.py' not in os.listdir(start_dir):
+            # what about __init__.pyc or pyo - and should probably allow .PY 
+            # (differently cased extension) which would be valid on Windoze
+            raise ImportError('Start directory is not importable: %r' % start_dir)
+        
+        tests = list(self._find_tests(start_dir, include_filter, is_top_level))
+        return self.suiteClass(tests)
     
-    top_level_dir = os.path.abspath(top_level_dir or start_dir)
-    if not top_level_dir in sys.path:
-        sys.path.append(top_level_dir)
-    
-    is_top_level = False
-    if top_level_dir is None or (os.path.abspath(start_dir) == os.path.abspath(top_level_dir)):
-        is_top_level = True
-    
-    suite = DiscoveringTestSuite(start_dir, include_filter, exclude_filter, is_top_level)
+
+    def _find_tests(self, start_dir, include_filter, is_top_level):
+        paths = os.listdir(start_dir)
+        
+        for path in paths:
+            full_path = os.path.join(start_dir, path)
+            # what about __init__.pyc or pyo - and should probably allow .PY 
+            # (differently cased extension) which would be valid on Windoze
+            # we would need to avoid loading the same tests multiple times
+            # from '.py', '.pyc' *and* '.pyo'
+            if os.path.isfile(full_path) and full_path.endswith('.py'):
+                if fnmatch(path, include_filter):
+                    module = self._get_module(name_from_path(full_path, self._top_level_dir))
+                    yield self.loadTestsFromModule(module)
+                    
+            elif os.path.isdir(full_path):
+                # what about __init__.pyc or pyo - and should probably allow .PY 
+                # (differently cased extension) which would be valid on Windoze
+                if '__init__.py' not in os.listdir(full_path):
+                    continue
+                
+                load_tests = None
+                if fnmatch(path, include_filter):
+                    package = self._get_module(name_from_path(full_path, self._top_level_dir))
+                    load_tests = getattr(package, 'load_tests', None)
+                
+                if load_tests is None:
+                    print 'Recursing into:', full_path
+                    for test in self._find_tests(full_path, include_filter, False):
+                        yield test
+                else:
+                    yield load_tests(self, tests, include_filter)
+        
+    def _get_module(self, name):
+        __import__(name)
+        return sys.modules[name]
+        
+
+def discover(start_dir='.', include_filter='test*', top_level_dir=None, **kwargs):
+    loader = DiscoveringLoader()
+    suite = loader.discover(start_dir, include_filter, top_level_dir)
     
     # need to return exit code here
     TextTestRunner(**kwargs).run(suite)
 
     
 if __name__ == '__main__':
-    run(*sys.argv[1:])
+    discover(*sys.argv[1:])
     
 # uses os.path.relpath so requires Python 2.6+
 # command line usage 'needs work'...
 # doesn't handle __path__ for test packages that extend themselves in odd ways
 # all tests must be in valid packages and importable from the top level of the project
-# recognises packages through an explicit '__init__.py' file - no allowance for .pyo or .pyc
-# currently we ignore the package files themselves (the __init__.py) unless it happens to match
-# the filter!
-# filters for test names on the wish list
+# recognises packages through an explicit '__init__.py' file - no allowance for .pyo, .pyc, .so, .pyd, .zip etc
+# should use code from load_from_dir in:
+# http://bazaar.launchpad.net/~bzr/bzr/trunk/annotate/head%3A/bzrlib/plugin.py
