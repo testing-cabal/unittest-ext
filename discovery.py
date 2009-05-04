@@ -75,7 +75,6 @@ class DiscoveringLoader(TestLoader):
                     load_tests = getattr(package, 'load_tests', None)
                 
                 if load_tests is None:
-                    print 'Recursing into:', full_path
                     for test in self._find_tests(full_path, include_filter, False):
                         yield test
                 else:
