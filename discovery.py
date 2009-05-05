@@ -3,40 +3,27 @@ import sys
 from unittest import TextTestRunner, TestLoader
 from fnmatch import fnmatch
 
- 
-def _name_from_path(path, top_level_dir):
-    """From a path relative to a top level directory, return the dotted
-    module name required to import it."""
-    path = os.path.splitext(os.path.normpath(path))[0]
-    
-    # we don't handle drive / volume names (Windows issue only I guess)
-    # start_dir / top_level_dir on separate drives is an error anyway
-    name = os.path.relpath(path, top_level_dir).replace(os.path.sep, '.')
-    return name
-
         
 class DiscoveringLoader(TestLoader):
     
     _top_level_dir = None
     
-    def loadTestsFromModule(self, module):
+    def loadTestsFromModule(self, module, use_load_tests=True):
         """This method adds the 'load_tests' protocol to test modules
         to allow them to customize test loading."""
         tests = TestLoader.loadTestsFromModule(self, module)
         load_tests = getattr(module, 'load_tests', None)
-        if load_tests is not None:
+        if use_load_tests and load_tests is not None:
             # load_tests is a hook allowing test modules to customize
             # how tests are loaded.
             # Arguments passsed into the load_tests function are:
             # loader, tests and discovery pattern
             # For modules None is always passed in for the pattern
             # parameter (the third parameter).
-            # would it be better to have load_tests just take 2
-            # arguments (different from packages)?
             tests = load_tests(self, tests, None)
         return tests
     
-    def discover(self, start_dir, include_filter, top_level_dir=None):
+    def discover(self, start_dir, include_filter='test*', top_level_dir=None):
         """Find and return all test modules from the specified start directory, recursing
         into subdirectories to find them. Only test files that match the filter will
         be loaded.
@@ -89,7 +76,7 @@ class DiscoveringLoader(TestLoader):
             if os.path.isfile(full_path) and path.lower().endswith('.py'):
                 if fnmatch(path, include_filter):
                     # if the test file matches, load it
-                    module = self._get_module(_name_from_path(full_path, self._top_level_dir))
+                    module = self._get_module_from_path(full_path)
                     yield self.loadTestsFromModule(module)
                     
             elif os.path.isdir(full_path):
@@ -99,22 +86,33 @@ class DiscoveringLoader(TestLoader):
                     continue
                 
                 load_tests = None
+                tests = None
                 if fnmatch(path, include_filter):
                     # only check load_tests if the package directory itself matches the filter
-                    package = self._get_module(_name_from_path(full_path, self._top_level_dir))
+                    package = self._get_module_from_path(full_path)
                     load_tests = getattr(package, 'load_tests', None)
+                    tests = self.loadTestsFromModule(package, use_load_tests=False)
                 
                 if load_tests is None:
+                    if tests is not None and tests.countTestCases() > 0:
+                        # tests loaded from package file
+                        yield tests
                     # recurse into the package
                     for test in self._find_tests(full_path, include_filter):
                         yield test
                 else:
-                    # Should we load the tests from the package?
-                    # can't call self.loadTestsFromModule as it will call load_tests
-                    # but without the pattern argument
-                    yield load_tests(self, None, include_filter)
+                    yield load_tests(self, tests, include_filter)
         
-    def _get_module(self, name):
+    def _get_module_from_path(self, path):
+        """Load a module from a path relative to the top-level directory
+        of a project. Used by discovery."""
+        path = os.path.splitext(os.path.normpath(path))[0]
+        
+        relpath = os.path.relpath(path, self._top_level_dir)
+        assert not os.path.isabs(relpath), "Path must be within the project"
+        assert not relpath.startswith('..'), "Path must be within the project"
+        
+        name = relpath.replace(os.path.sep, '.')
         __import__(name)
         return sys.modules[name]
         
@@ -141,16 +139,22 @@ def discover(start_dir='.', include_filter='test*', top_level_dir=None, **kwargs
     
 if __name__ == '__main__':
     # my intention is to build test discovery into unittest command line usage with the form
-    # python -m unittest discover start_dir include_filter top_level directory
+    # python -m unittest discover start_dir include_filter top_level_directory
     result = discover(*sys.argv[1:])
     sys.exit(not result.wasSuccessful())
 
+# If the start directory is a package, we don't load tests from it's __init__.py
+# instead we start discovery *inside* the package.
+    
 # load_tests for module is called with (loader, tests, None)
-# load_tests for package (only used from discovery) is called with (loader, None, include_filter)
-# is this inconsistency ok?
+# load_tests for package (only used from discovery) is called with (loader, tests, include_filter)
+
 # uses os.path.relpath so requires Python 2.6+
+
 # doesn't handle __path__ for test packages that extend themselves in odd ways
+
 # all tests must be in valid packages and importable from the top level of the project
 # recognises packages through an explicit '__init__.py' file - no allowance for .pyo, .pyc, .so, .pyd, .zip etc
+
 # should use code from load_from_dir in:
 # http://bazaar.launchpad.net/~bzr/bzr/trunk/annotate/head%3A/bzrlib/plugin.py
