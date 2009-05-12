@@ -7,36 +7,43 @@ class Paramaterizer(type):
         except KeyError:
             raise Exception('Parameterized tests must provide a params class attribute')
             
-        try:
-            assertMethod = attrs['assertWithParams']
-        except KeyError:
-            raise Exception('Parameterized tests must provide an assertWithParams method')
+        for name, scenarios in params.items():
+            if name not in attrs:
+                raise Exception('Test class %s does not have a method: %r' % 
+                                (class_name, name))
             
-        for index, args in enumerate(params):
-            def test(self, args=args):
-                self.assertWithParams(*args)
-            test.__doc__ = """Test with args: %s""" % (args,)
-            name = 'test_with_params_%s' % (index + 1)
-            test.__name__ = name
-            
-            if name in attrs:
-                raise Exception('Test class %s already has a method called: %s' % (name, class_name))
-            attrs[name] = test
+            for index, args in enumerate(scenarios):
+                def test(self, args=args, name=name):
+                    assertMethod = getattr(self, name)
+                    assertMethod(**args)
+                test.__doc__ = """%s with args: %s""" % (name, args)
+                test_name = 'test_%s_%s' % (name, index + 1)
+                test.__name__ = test_name
+                
+                if test_name in attrs:
+                    raise Exception('Test class %s already has a method called: %s' % 
+                                    (class_name, test_name))
+                attrs[test_name] = test
         
         return type.__new__(meta, class_name, bases, attrs)
         
 class TestCaseWithParams(unittest.TestCase):
     __metaclass__ = Paramaterizer
-    params = []
-    def assertWithParams(self):
-        pass
+    params = {}
     
 class Test(TestCaseWithParams):
-    params = [(1, 1), (2, 3), (2, 2), (3, 5)]
+    params = {
+        'assertEqualWithParams': [dict(a=1, b=2), dict(a=3, b=3),
+                                  dict(a=5, b=4)],
+        'assertZeroDivisionWithParams':[dict(a=1, b=0), dict(a=3, b=2)]
+        
+        }
     
-    def assertWithParams(self, a, b):
+    def assertEqualWithParams(self, a, b):
         self.assertEqual(a, b)
 
+    def assertZeroDivisionWithParams(self, a, b):
+        self.assertRaises(ZeroDivisionError, lambda: a/b)
 
 if __name__ == '__main__':
     unittest.main(testRunner=unittest.TextTestRunner(verbosity=2))
