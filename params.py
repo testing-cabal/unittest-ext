@@ -1,18 +1,18 @@
 import unittest
+from types import FunctionType
 
 class Paramaterizer(type):
     def __new__(meta, class_name, bases, attrs):
-        try:
-            params = attrs['params']
-        except KeyError:
-            raise Exception('Parameterized tests must provide a params class attribute')
+        
+        for name, item in attrs.items():
+            if not isinstance(item, FunctionType):
+                continue
             
-        for name, scenarios in params.items():
-            if name not in attrs:
-                raise Exception('Test class %s does not have a method: %r' % 
-                                (class_name, name))
+            params = getattr(item, 'params', None)
+            if params is None:
+                continue
             
-            for index, args in enumerate(scenarios):
+            for index, args in enumerate(params):
                 def test(self, args=args, name=name):
                     assertMethod = getattr(self, name)
                     assertMethod(**args)
@@ -27,21 +27,22 @@ class Paramaterizer(type):
         
         return type.__new__(meta, class_name, bases, attrs)
         
+def with_params(params):
+    def decorate(func):
+        func.params = params
+        return func
+    return decorate
+
 class TestCaseWithParams(unittest.TestCase):
     __metaclass__ = Paramaterizer
-    params = {}
     
 class Test(TestCaseWithParams):
-    params = {
-        'assertEqualWithParams': [dict(a=1, b=2), dict(a=3, b=3),
-                                  dict(a=5, b=4)],
-        'assertZeroDivisionWithParams':[dict(a=1, b=0), dict(a=3, b=2)]
-        
-        }
     
+    @with_params([dict(a=1, b=2), dict(a=3, b=3), dict(a=5, b=4)])
     def assertEqualWithParams(self, a, b):
         self.assertEqual(a, b)
 
+    @with_params([dict(a=1, b=0), dict(a=3, b=2)])
     def assertZeroDivisionWithParams(self, a, b):
         self.assertRaises(ZeroDivisionError, lambda: a/b)
 
