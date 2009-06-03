@@ -45,6 +45,38 @@ class Test(TestCaseWithParams):
     @with_params([dict(a=1, b=0), dict(a=3, b=2)])
     def assertZeroDivisionWithParams(self, a, b):
         self.assertRaises(ZeroDivisionError, lambda: a/b)
+        
+        
+
+def test_generator(func):
+    def inner(self):
+        failures = []
+        errors = []
+        for test, args in func(self):
+            try:
+                test(*args)
+            except self.failureException, e:
+                failures.append((test.__name__, args, e))
+            except Exception, e:
+                errors.append((test.__name__, args, e))
+        msg = '\n'.join('%s%s: %s: %s' % (name, args, e.__class__.__name__, e) for (name, args, e) in failures + errors) 
+        if errors:
+            raise Exception(msg)
+        raise self.failureException(msg)
+    return inner
+
+
+class Test2(unittest.TestCase):
+
+    @test_generator
+    def testSomething(self):
+        for a, b in ((1, 2), (3, 3), (5, 4)):
+            yield self.assertEqual, (a, b)
+        
+        def raises():
+            raise Exception('phooey')
+        yield raises, ()
+    
 
 if __name__ == '__main__':
     unittest.main(testRunner=unittest.TextTestRunner(verbosity=2))
