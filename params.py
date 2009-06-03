@@ -57,6 +57,8 @@ def test_generator(func):
                 test(*args)
             except self.failureException, e:
                 failures.append((test.__name__, args, e))
+            except KeyboardInterrupt:
+                raise
             except Exception, e:
                 errors.append((test.__name__, args, e))
         msg = '\n'.join('%s%s: %s: %s' % (name, args, e.__class__.__name__, e) for (name, args, e) in failures + errors) 
