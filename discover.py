@@ -1,6 +1,10 @@
+import os
 import sys
 import optparse
+import types
 import unittest
+
+from fnmatch import fnmatch
 
 
 class DiscoveringTestLoader(unittest.TestLoader):
@@ -15,7 +19,7 @@ class DiscoveringTestLoader(unittest.TestLoader):
         tests = []
         for name in dir(module):
             obj = getattr(module, name)
-            if isinstance(obj, type) and issubclass(obj, TestCase):
+            if isinstance(obj, type) and issubclass(obj, unittest.TestCase):
                 tests.append(self.loadTestsFromTestCase(obj))
 
         load_tests = getattr(module, 'load_tests', None)
@@ -72,11 +76,11 @@ class DiscoveringTestLoader(unittest.TestLoader):
         of a project. Used by discovery."""
         path = os.path.splitext(os.path.normpath(path))[0]
 
-        relpath = os.path.relpath(path, self._top_level_dir)
-        assert not os.path.isabs(relpath), "Path must be within the project"
-        assert not relpath.startswith('..'), "Path must be within the project"
+        _relpath = relpath(path, self._top_level_dir)
+        assert not os.path.isabs(_relpath), "Path must be within the project"
+        assert not _relpath.startswith('..'), "Path must be within the project"
 
-        name = relpath.replace(os.path.sep, '.')
+        name = _relpath.replace(os.path.sep, '.')
         __import__(name)
         return sys.modules[name]
 
@@ -116,26 +120,62 @@ class DiscoveringTestLoader(unittest.TestLoader):
                 else:
                     yield load_tests(self, tests, pattern)
                     
+##############################################
+# relpath implementation taken from Python 2.7
+
+if os.path is sys.modules.get('ntpath'):
+    def relpath(path, start=os.path.curdir):
+        """Return a relative version of a path"""
+    
+        if not path:
+            raise ValueError("no path specified")
+        start_list = os.path.abspath(start).split(os.path.sep)
+        path_list = os.path.abspath(path).split(os.path.sep)
+        if start_list[0].lower() != path_list[0].lower():
+            unc_path, rest = os.path.splitunc(path)
+            unc_start, rest = os.path.splitunc(start)
+            if bool(unc_path) ^ bool(unc_start):
+                raise ValueError("Cannot mix UNC and non-UNC paths (%s and %s)"
+                                                                    % (path, start))
+            else:
+                raise ValueError("path is on drive %s, start on drive %s"
+                                                    % (path_list[0], start_list[0]))
+        # Work out how much of the filepath is shared by start and path.
+        for i in range(min(len(start_list), len(path_list))):
+            if start_list[i].lower() != path_list[i].lower():
+                break
+        else:
+            i += 1
+    
+        rel_list = [os.path.pardir] * (len(start_list)-i) + path_list[i:]
+        if not rel_list:
+            return os.path.curdir
+        return os.path.join(*rel_list)
+
+else:
+    # default to posixpath definition
+    def relpath(path, start=os.path.curdir):
+        """Return a relative version of a path"""
+    
+        if not path:
+            raise ValueError("no path specified")
+    
+        start_list = os.path.abspath(start).split(os.path.sep)
+        path_list = os.path.abspath(path).split(os.path.sep)
+    
+        # Work out how much of the filepath is shared by start and path.
+        i = len(os.path.commonprefix([start_list, path_list]))
+    
+        rel_list = [os.path.pardir] * (len(start_list)-i) + path_list[i:]
+        if not rel_list:
+            return os.path.curdir
+        return os.path.join(*rel_list)
+
+#############################################
 
 
 USAGE = """\
-Usage: discover.py [options] [tests]
-
-Options:
-  -h, --help       Show this message
-  -v, --verbose    Verbose output
-  -q, --quiet      Minimal output
-
-Examples:
-   discover.py test_module                       - run tests from test_module
-   discover.py test_module.TestClass             - run tests from
-                                                   test_module.TestClass
-   discover.py test_module.TestClass.test_method - run specified test method
-
-[tests] can be a list of any number of test modules, classes and test
-methods.
-
-Alternative Usage:  discover.py discover [options]
+Usage: discover.py [options]
 
 Options:
   -v, --verbose    Verbose output
@@ -182,7 +222,7 @@ def _do_discovery(argv, verbosity, Loader):
     top_level_dir = options.top
 
     loader = Loader()
-    return loader.discover(start_dir, pattern, top_level_dir)
+    return loader.discover(start_dir, pattern, top_level_dir), verbosity
 
 
 def _run_tests(tests, testRunner, verbosity, exit):
@@ -198,15 +238,11 @@ def _run_tests(tests, testRunner, verbosity, exit):
     return result
 
 
-def main(module='__main__', argv=None, testRunner=None,
-        testLoader=None, exit=True, verbosity=1):
+def main(argv=None, testRunner=None, testLoader=None, exit=True, verbosity=1):
     if testLoader is None:
         testLoader = DiscoveringTestLoader
     if testRunner is None:
         testRunner = unittest.TextTestRunner
-    if isinstance(module, basestring):
-        __import__(module)
-        module = sys.modules[module]
     if argv is None:
         argv = sys.argv[1:]
 
