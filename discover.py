@@ -6,6 +6,7 @@ import unittest
 
 from fnmatch import fnmatch
 
+__version__ = '0.1.0'
 
 class DiscoveringTestLoader(unittest.TestLoader):
     """
