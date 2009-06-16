@@ -1,5 +1,6 @@
 This is the test discovery mechanism and ``load_tests`` protocol for unittest
-backported from Python 2.7 to work with Python 2.4 or more recent.
+backported from Python 2.7 to work with Python 2.4 or more recent (including 
+Python 3).
 
 discover can be installed with pip or easy_install. After installing switch the
 current directory to the top level directory of your project and run::

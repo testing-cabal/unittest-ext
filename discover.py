@@ -10,6 +10,12 @@ import unittest
 
 from fnmatch import fnmatch
 
+if hasattr(types, 'ClassType'):
+    # for Python 3.0 compatibility
+    class_types = (types.ClassType, type)
+else:
+    class_types = type
+
 
 __version__ = '0.2.0'
 
@@ -199,8 +205,8 @@ level directory of the project.
 
 def _usage_exit(msg=None):
     if msg:
-        print msg
-    print USAGE
+        print (msg)
+    print (USAGE)
     sys.exit(2)
 
 
@@ -235,7 +241,7 @@ def _do_discovery(argv, verbosity, Loader):
 
 
 def _run_tests(tests, testRunner, verbosity, exit):
-    if isinstance(testRunner, (type, types.ClassType)):
+    if isinstance(testRunner, class_types):
         try:
             testRunner = testRunner(verbosity=verbosity)
         except TypeError:
