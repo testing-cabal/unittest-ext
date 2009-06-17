@@ -11,9 +11,9 @@ import unittest
 from fnmatch import fnmatch
 
 if hasattr(types, 'ClassType'):
-    # for Python 3.0 compatibility
     class_types = (types.ClassType, type)
 else:
+    # for Python 3.0 compatibility
     class_types = type
 
 
@@ -184,6 +184,7 @@ if not hasattr(os.path, 'relpath'):
             if not rel_list:
                 return os.path.curdir
             return os.path.join(*rel_list)
+        
     os.path.relpath = relpath
 
 #############################################
@@ -266,4 +267,8 @@ def main(argv=None, testRunner=None, testLoader=None, exit=True, verbosity=1):
 
 
 if __name__ == '__main__':
+    if sys.argv[0] is None:
+        # fix for weird behaviour when run with python -m
+        # from a zipped egg.
+        sys.argv[0] = 'program.py'
     main()

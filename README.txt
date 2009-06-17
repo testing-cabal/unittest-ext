@@ -1,3 +1,7 @@
+# Copyright Michael Foord 2009
+# Licensed under the BSD License
+# See: http://pypi.python.org/pypi/discover
+
 This is the test discovery mechanism and ``load_tests`` protocol for unittest
 backported from Python 2.7 to work with Python 2.4 or more recent (including 
 Python 3).
