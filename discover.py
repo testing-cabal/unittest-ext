@@ -17,7 +17,7 @@ else:
     class_types = type
 
 
-__version__ = '0.2.0'
+__version__ = '0.2.1'
 
 
 class DiscoveringTestLoader(unittest.TestLoader):
