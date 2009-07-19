@@ -26,6 +26,7 @@ def make_failed_import_test(path, suiteClass):
     message = 'Importing of a test module failed. Path: %r' % path
     if hasattr(traceback, 'format_exc'):
         # Python 2.3 compatibility
+        # format_exc returns two frames of discover.py as well
         message += '\n%s' % traceback.format_exc()
     class ModuleImportFailure(unittest.TestCase):
         def testImportFailure(self):
