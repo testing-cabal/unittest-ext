@@ -5,6 +5,7 @@
 import os
 import sys
 import optparse
+import traceback
 import types
 import unittest
 
@@ -17,8 +18,20 @@ else:
     class_types = type
 
 
-__version__ = '0.2.1'
+__version__ = '0.3.0 alpha'
 
+
+
+def make_failed_import_test(path, suiteClass):
+    message = 'Importing of a test module failed. Path: %r' % path
+    if hasattr(traceback, 'format_exc'):
+        # Python 2.3 compatibility
+        message += '\n%s' % traceback.format_exc()
+    class ModuleImportFailure(unittest.TestCase):
+        def testImportFailure(self):
+            raise ImportError(message)
+    return suiteClass((ModuleImportFailure('testImportFailure'),))
+                  
 
 class DiscoveringTestLoader(unittest.TestLoader):
     """
@@ -109,8 +122,14 @@ class DiscoveringTestLoader(unittest.TestLoader):
             if os.path.isfile(full_path) and path.lower().endswith('.py'):
                 if fnmatch(path, pattern):
                     # if the test file matches, load it
-                    module = self._get_module_from_path(full_path)
-                    yield self.loadTestsFromModule(module)
+                    try:
+                        module = self._get_module_from_path(full_path)
+                    except:
+                        # screwy way of getting exception to remain
+                        # compatible with Python 2.X and 3.X
+                        yield make_failed_import_test(full_path, self.suiteClass)
+                    else:
+                        yield self.loadTestsFromModule(module)
             elif os.path.isdir(full_path):
                 if not os.path.isfile(os.path.join(full_path, '__init__.py')):
                     continue
@@ -132,7 +151,8 @@ class DiscoveringTestLoader(unittest.TestLoader):
                         yield test
                 else:
                     yield load_tests(self, tests, pattern)
-                    
+
+
 ##############################################
 # relpath implementation taken from Python 2.7
 
